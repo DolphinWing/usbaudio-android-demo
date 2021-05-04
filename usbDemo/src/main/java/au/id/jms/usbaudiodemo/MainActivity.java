@@ -13,13 +13,16 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.hardware.usb.UsbConstants;
 import android.hardware.usb.UsbDevice;
+import android.hardware.usb.UsbDeviceConnection;
 import android.hardware.usb.UsbInterface;
 import android.hardware.usb.UsbManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.support.v4.app.FragmentActivity;
 import android.util.Log;
 import android.view.Menu;
 import android.view.View;
+import android.view.WindowManager;
 import android.widget.Button;
 import au.id.jms.usbaudio.AudioPlayback;
 import au.id.jms.usbaudio.UsbAudio;
@@ -42,6 +45,7 @@ public class MainActivity extends FragmentActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         setContentView(R.layout.activity_main);
         
         Log.d(TAG, "Hello, World!");
@@ -53,7 +57,10 @@ public class MainActivity extends FragmentActivity {
         while(deviceIterator.hasNext()){
             UsbDevice device = deviceIterator.next();
     		UsbInterface intf = device.getInterface(0);
-    		if (intf.getInterfaceClass() == UsbConstants.USB_CLASS_AUDIO) {
+    		Log.d(TAG, String.format("%s: vid=0x%04x, pid=0x%04x",
+					device.getDeviceName(), device.getVendorId(), device.getProductId()));
+    		if (intf.getInterfaceClass() == UsbConstants.USB_CLASS_AUDIO ||
+					intf.getInterfaceClass() == UsbConstants.USB_CLASS_VIDEO) {
     			Log.d(TAG, "Audio class device: " + device);
     			mAudioDevice = device;
     		}
@@ -77,7 +84,16 @@ public class MainActivity extends FragmentActivity {
 		startButton.setOnClickListener(new View.OnClickListener() {
 			public void onClick(View v) {
 				Log.d(TAG, "Start pressed");
-		    	if (mUsbAudio.setup() == true) {
+				int fd = 0;
+				try {
+					UsbDeviceConnection conn = mUsbManager.openDevice(mAudioDevice);
+					fd = conn.getFileDescriptor();
+					Log.d(TAG, "open device: " + fd);
+				} catch (Exception e) {
+					Log.e(TAG, "open device: " + e.getMessage());
+					e.printStackTrace();
+				}
+		    	if (mUsbAudio.setup(fd) == true) {
 		    		startButton.setEnabled(false);
 		    		stopButton.setEnabled(true);
 		    	}
@@ -110,15 +126,12 @@ public class MainActivity extends FragmentActivity {
         registerReceiver(mUsbPermissionReciever, filter);
         
         // Request permission from user
-        if (mAudioDevice != null && mPermissionIntent != null) {
-        	mUsbManager.requestPermission(mAudioDevice, mPermissionIntent);
-        } else {
-        	Log.e(TAG, "Device not present? Can't request peremission");
-        }
+        requestPermission();
     }
     
     @Override
     protected void onDestroy() {
+    	super.onDestroy();
     	unregisterReceiver(mUsbPermissionReciever);
     	if (mUsbAudio != null) {
     		mUsbAudio.stop();
@@ -134,7 +147,10 @@ public class MainActivity extends FragmentActivity {
     }
 
     private void setDevice(UsbDevice device) {
-    	// Set button to enabled when permission is obtained
+    	if (device != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+			Log.d(TAG, "setDevice: " + device.getProductName());
+		}
+		// Set button to enabled when permission is obtained
     	((Button) findViewById(R.id.button1)).setEnabled(device != null);
     }
     
@@ -153,4 +169,16 @@ public class MainActivity extends FragmentActivity {
 			}
 		}
     }
+
+    private void requestPermission() {
+    	if (mAudioDevice != null && mUsbManager != null) {
+			boolean granted = mUsbManager.hasPermission(mAudioDevice);
+			Log.d(TAG, "granted: " + granted);
+		}
+		if (mAudioDevice != null && mPermissionIntent != null) {
+			mUsbManager.requestPermission(mAudioDevice, mPermissionIntent);
+		} else {
+			Log.e(TAG, "Device not present? Can't request permission");
+		}
+	}
 }

@@ -5,7 +5,7 @@ public class UsbAudio {
         System.loadLibrary("usbaudio");
     }
 
-    public native boolean setup();
+    public native boolean setup(int fd);
     public native void close();
     public native void loop();
     public native boolean stop();

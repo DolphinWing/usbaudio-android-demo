@@ -46,15 +46,18 @@
 #include <android/log.h>
 #define LOGD(...) \
     __android_log_print(ANDROID_LOG_DEBUG, "UsbAudioNative", __VA_ARGS__)
+#define LOGE(...) \
+    __android_log_print(ANDROID_LOG_ERROR, "UsbAudioNative", __VA_ARGS__)
 
 #define UNUSED __attribute__((unused))
 
 /* The first PCM stereo AudioStreaming endpoint. */
-#define EP_ISO_IN	0x84
-#define IFACE_NUM   2
+#define EP_ISO_IN	129
+#define IFACE_NUM   3
 
 static int do_exit = 1;
 static struct libusb_device_handle *devh = NULL;
+static libusb_context *usb_ctx;
 
 static unsigned long num_bytes = 0, num_xfer = 0;
 static struct timeval tv_start;
@@ -213,20 +216,23 @@ JNIEXPORT void JNI_OnUnload(JavaVM* vm, void* reserved UNUSED)
 }
 
 JNIEXPORT jboolean JNICALL
-Java_au_id_jms_usbaudio_UsbAudio_setup(JNIEnv* env UNUSED, jobject foo UNUSED)
+Java_au_id_jms_usbaudio_UsbAudio_setup(JNIEnv* env UNUSED, jobject foo UNUSED, jint fd)
 {
 	int rc;
 
-	rc = libusb_init(NULL);
+	rc = libusb_init2(&usb_ctx, "/dev/bus/usb");
+	LOGD("init libusb: %s", libusb_error_name(rc));
 	if (rc < 0) {
-		LOGD("Error initializing libusb: %s\n", libusb_error_name(rc));
+		LOGE("Error initializing libusb: %s\n", libusb_error_name(rc));
         return false;
 	}
 
-    /* This device is the TI PCM2900C Audio CODEC default VID/PID. */
-	devh = libusb_open_device_with_vid_pid(NULL, 0x08bb, 0x29c0);
+    /* This device is the AVerMedia BU113 default VID/PID. */
+	struct libusb_device *usb_dev = libusb_get_device_with_fd(usb_ctx, 1994, 4371, NULL, fd, 2, 4);
+	libusb_set_device_fd(usb_dev, fd);	// assign fd to libusb_device for non-rooted Android devices
+	rc = libusb_open(usb_dev, &devh);
 	if (!devh) {
-		LOGD("Error finding USB device\n");
+		LOGE("Error finding USB device\n");
         libusb_exit(NULL);
         return false;
 	}
@@ -235,8 +241,7 @@ Java_au_id_jms_usbaudio_UsbAudio_setup(JNIEnv* env UNUSED, jobject foo UNUSED)
     if (rc == 1) {
         rc = libusb_detach_kernel_driver(devh, IFACE_NUM);
         if (rc < 0) {
-            LOGD("Could not detach kernel driver: %s\n",
-                    libusb_error_name(rc));
+            LOGE("Could not detach kernel driver: %s\n", libusb_error_name(rc));
             libusb_close(devh);
             libusb_exit(NULL);
             return false;
@@ -245,7 +250,7 @@ Java_au_id_jms_usbaudio_UsbAudio_setup(JNIEnv* env UNUSED, jobject foo UNUSED)
 
 	rc = libusb_claim_interface(devh, IFACE_NUM);
 	if (rc < 0) {
-		LOGD("Error claiming interface: %s\n", libusb_error_name(rc));
+		LOGE("Error claiming interface: %s\n", libusb_error_name(rc));
         libusb_close(devh);
         libusb_exit(NULL);
         return false;
@@ -253,7 +258,7 @@ Java_au_id_jms_usbaudio_UsbAudio_setup(JNIEnv* env UNUSED, jobject foo UNUSED)
 
 	rc = libusb_set_interface_alt_setting(devh, IFACE_NUM, 1);
 	if (rc < 0) {
-		LOGD("Error setting alt setting: %s\n", libusb_error_name(rc));
+		LOGE("Error setting alt setting: %s\n", libusb_error_name(rc));
         libusb_close(devh);
         libusb_exit(NULL);
         return false;
@@ -262,7 +267,7 @@ Java_au_id_jms_usbaudio_UsbAudio_setup(JNIEnv* env UNUSED, jobject foo UNUSED)
     // Get write callback handle
     jclass clazz = (*env)->FindClass(env, "au/id/jms/usbaudio/AudioPlayback"); 
     if (!clazz) {
-        LOGD("Could not find au.id.jms.usbaudio.AudioPlayback");
+        LOGE("Could not find au.id.jms.usbaudio.AudioPlayback");
         libusb_close(devh);
         libusb_exit(NULL);
         return false;
@@ -272,7 +277,7 @@ Java_au_id_jms_usbaudio_UsbAudio_setup(JNIEnv* env UNUSED, jobject foo UNUSED)
     au_id_jms_usbaudio_AudioPlayback_write = (*env)->GetStaticMethodID(env,
             au_id_jms_usbaudio_AudioPlayback, "write", "([B)V");
     if (!au_id_jms_usbaudio_AudioPlayback_write) {
-        LOGD("Could not find au.id.jms.usbaudio.AudioPlayback");
+        LOGE("Could not find au.id.jms.usbaudio.AudioPlayback");
         (*env)->DeleteGlobalRef(env, au_id_jms_usbaudio_AudioPlayback);
         libusb_close(devh);
         libusb_exit(NULL);
@@ -284,7 +289,7 @@ Java_au_id_jms_usbaudio_UsbAudio_setup(JNIEnv* env UNUSED, jobject foo UNUSED)
     do_exit = 0;
     LOGD("Starting capture");
 	if ((rc = benchmark_in(EP_ISO_IN)) < 0) {
-        LOGD("Capture failed to start: %d", rc);
+        LOGE("Capture failed to start: %d", rc);
         return false;
     }
     return true;
