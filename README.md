@@ -6,3 +6,7 @@ Device.
 
 Joel Stanley
 joel@jms.id.au
+
+=====================
+
+Migrated to Android Studio 4.1.3 by DolphinWing
