@@ -182,7 +182,7 @@ unsigned int measure(void)
 	diff_msec = (tv_stop.tv_sec - tv_start.tv_sec)*1000;
 	diff_msec += (tv_stop.tv_usec - tv_start.tv_usec)/1000;
 
-	printf("%lu transfers (total %lu bytes) in %u miliseconds => %lu bytes/sec\n",
+	LOGD("%lu transfers (total %lu bytes) in %u miliseconds => %lu bytes/sec\n",
 		num_xfer, num_bytes, diff_msec, (num_bytes*1000)/diff_msec);
 
     return num_bytes;
@@ -218,7 +218,7 @@ JNIEXPORT void JNI_OnUnload(JavaVM* vm, void* reserved UNUSED)
 JNIEXPORT jboolean JNICALL
 Java_au_id_jms_usbaudio_UsbAudio_setup(JNIEnv* env UNUSED, jobject foo UNUSED, jint fd)
 {
-	int rc;
+	int rc, idx, j;
 
 	rc = libusb_init2(&usb_ctx, "/dev/bus/usb");
 	LOGD("init libusb: %s", libusb_error_name(rc));
@@ -236,6 +236,29 @@ Java_au_id_jms_usbaudio_UsbAudio_setup(JNIEnv* env UNUSED, jobject foo UNUSED, j
         libusb_exit(NULL);
         return false;
 	}
+
+	struct libusb_config_descriptor *config;
+    rc = libusb_get_config_descriptor(usb_dev, 0, &config);
+    const struct libusb_interface_descriptor *if_desc;
+    if (!rc) {
+        for (idx = 0; idx < config->bNumInterfaces; ++idx) {
+            if_desc = &config->interface[idx].altsetting[0];
+            if (if_desc->bInterfaceClass == 1 && if_desc->bInterfaceSubClass == 2) {
+                for (j = 0; j < config->interface[idx].num_altsetting; j++) {
+                    if_desc = &config->interface[idx].altsetting[j];
+                    if (if_desc->bInterfaceClass == 1 && if_desc->bInterfaceSubClass == 2 &&
+                        if_desc->bNumEndpoints > 0) {
+                        break;
+                    }
+                    if_desc = NULL;
+                }
+                if (if_desc) break;//break outer for
+            }
+        }
+    }
+    if (if_desc) {
+        LOGD("%d bEndpointAddress: %d", idx, if_desc->endpoint[0].bEndpointAddress);
+    }
 
     rc = libusb_kernel_driver_active(devh, IFACE_NUM);
     if (rc == 1) {
