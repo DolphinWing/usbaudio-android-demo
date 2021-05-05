@@ -1,6 +1,9 @@
 package au.id.jms.usbaudio;
 
-import com.serenegiant.usb.USBMonitor;
+import android.content.Context;
+import android.hardware.usb.UsbDevice;
+import android.hardware.usb.UsbDeviceConnection;
+import android.hardware.usb.UsbManager;
 
 /**
  * Reference from https://github.com/shenki/usbaudio-android-demo
@@ -60,14 +63,35 @@ public class UsbAudio {
     /**
      * Open USB audio device.
      *
-     * @param ctrlBlock USB control block
+     * @param context Android Context
+     * @param device  USB device
      */
-    public void open(final USBMonitor.UsbControlBlock ctrlBlock) {
-        if (ctrlBlock == null) {
-            throw new NullPointerException("no UsbControlBlock");
+    public boolean open(final Context context, final UsbDevice device) {
+        if (context == null) {
+            throw new NullPointerException("no Android Context");
+        }
+        if (device == null) {
+            throw new NullPointerException("no USB device");
         }
 
-        setup(ctrlBlock.getVenderId(), ctrlBlock.getProductId(), ctrlBlock.getFileDescriptor(),
-                ctrlBlock.getBusNum(), ctrlBlock.getDevNum());
+        UsbManager manager = (UsbManager) context.getSystemService(Context.USB_SERVICE);
+        if (manager != null) {
+            int fd = 0;
+            try {
+                UsbDeviceConnection conn = manager.openDevice(device);
+                fd = conn.getFileDescriptor();
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+            String[] name = device.getDeviceName().split("/");
+            int busnum = 0;
+            int devnum = 0;
+            if (name != null && name.length > 2) {
+                busnum = Integer.parseInt(name[name.length - 2]);
+                devnum = Integer.parseInt(name[name.length - 1]);
+            }
+            return setup(device.getVendorId(), device.getProductId(), fd, busnum, devnum);
+        }
+        return false;
     }
 }
