@@ -13,7 +13,6 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.hardware.usb.UsbConstants;
 import android.hardware.usb.UsbDevice;
-import android.hardware.usb.UsbDeviceConnection;
 import android.hardware.usb.UsbInterface;
 import android.hardware.usb.UsbManager;
 import android.os.Build;
@@ -40,7 +39,7 @@ public class MainActivity extends FragmentActivity {
 
 	Thread mUsbThread = null;
 
-	private UsbReciever mUsbPermissionReciever;
+	private UsbReceiver mUsbPermissionReceiver;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -63,6 +62,7 @@ public class MainActivity extends FragmentActivity {
 					intf.getInterfaceClass() == UsbConstants.USB_CLASS_VIDEO) {
     			Log.d(TAG, "Audio class device: " + device);
     			mAudioDevice = device;
+				// requestPermission();
     		}
         }
         
@@ -72,7 +72,7 @@ public class MainActivity extends FragmentActivity {
         
     	mUsbAudio = new UsbAudio();
     	
-    	AudioPlayback.setup();
+    	AudioPlayback.setup(null);
     	
     	// Buttons
 		final Button startButton = (Button) findViewById(R.id.button1);
@@ -84,20 +84,13 @@ public class MainActivity extends FragmentActivity {
 		startButton.setOnClickListener(new View.OnClickListener() {
 			public void onClick(View v) {
 				Log.d(TAG, "Start pressed");
-				int fd = 0;
-				try {
-					UsbDeviceConnection conn = mUsbManager.openDevice(mAudioDevice);
-					fd = conn.getFileDescriptor();
-					Log.d(TAG, "open device: " + fd);
-				} catch (Exception e) {
-					Log.e(TAG, "open device: " + e.getMessage());
-					e.printStackTrace();
-				}
-		    	if (mUsbAudio.setup(fd) == true) {
+				if (mAudioDevice == null) return;//unable to continue
+		    	if (mUsbAudio.open(MainActivity.this, mAudioDevice)) {
 		    		startButton.setEnabled(false);
 		    		stopButton.setEnabled(true);
 		    	}
-		    	
+
+		    	mUsbAudio.start();
 		        new Thread(new Runnable() {
 		            public void run() {
 		            	while (true) {
@@ -122,8 +115,8 @@ public class MainActivity extends FragmentActivity {
         // Register for permission
         mPermissionIntent = PendingIntent.getBroadcast(this, 0, new Intent(ACTION_USB_PERMISSION), 0);
         IntentFilter filter = new IntentFilter(ACTION_USB_PERMISSION);
-        mUsbPermissionReciever = new UsbReciever();
-        registerReceiver(mUsbPermissionReciever, filter);
+        mUsbPermissionReceiver = new UsbReceiver();
+        registerReceiver(mUsbPermissionReceiver, filter);
         
         // Request permission from user
         requestPermission();
@@ -132,7 +125,7 @@ public class MainActivity extends FragmentActivity {
     @Override
     protected void onDestroy() {
     	super.onDestroy();
-    	unregisterReceiver(mUsbPermissionReciever);
+    	unregisterReceiver(mUsbPermissionReceiver);
     	if (mUsbAudio != null) {
     		mUsbAudio.stop();
     		mUsbAudio.close();
@@ -154,7 +147,7 @@ public class MainActivity extends FragmentActivity {
     	((Button) findViewById(R.id.button1)).setEnabled(device != null);
     }
     
-    private class UsbReciever extends BroadcastReceiver {
+    private class UsbReceiver extends BroadcastReceiver {
 		
 		@Override
 		public void onReceive(Context context, Intent intent) {
